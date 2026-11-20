@@ -5,6 +5,7 @@
 #include <QGraphicsView>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QWheelEvent>
 #include <QtMath>
 #include <cmath>
@@ -45,6 +46,112 @@ int main(int argc, char **argv)
     auto *scale = widget.findChild<QLabel *>("scaleLabel");
     check(view && size && position && pixel && scale, "UI controls missing");
 
+    QImage mask(4, 2, QImage::Format_Grayscale8);
+    for (int y = 0; y < mask.height(); ++y) {
+        uchar *line = mask.scanLine(y);
+        line[0] = 0;
+        line[1] = 127;
+        line[2] = 128;
+        line[3] = 255;
+    }
+    const QColor maskColor(200, 100, 50);
+    ImageMaskLabel softMask(QPointF(5.5, 6), mask, maskColor, -1, 128);
+    check(softMask.imagePos() == QPointF(7.5, 7)
+          && softMask.boundingRect() == QRectF(-2, -1, 4, 2),
+          "mask geometry is incorrect");
+    QImage maskRender(4, 2, QImage::Format_ARGB32);
+    maskRender.fill(Qt::transparent);
+    {
+        QPainter painter(&maskRender);
+        painter.translate(2, 1);
+        softMask.paint(&painter, nullptr, nullptr);
+    }
+    check(maskRender.pixelColor(0, 0).alpha() == 0
+          && maskRender.pixelColor(1, 0).alpha() == 64
+          && maskRender.pixelColor(2, 0).alpha() == 64
+          && maskRender.pixelColor(3, 0).alpha() == 128
+          && maskRender.pixelColor(3, 0).red() == maskColor.red(),
+          "mask intensity or opacity was not rendered correctly");
+    ImageMaskLabel binaryMask(QPointF(5.5, 6), mask, maskColor, 127, 128);
+    maskRender.fill(Qt::transparent);
+    {
+        QPainter painter(&maskRender);
+        painter.translate(2, 1);
+        binaryMask.paint(&painter, nullptr, nullptr);
+    }
+    check(maskRender.pixelColor(1, 0).alpha() == 0
+          && maskRender.pixelColor(2, 0).alpha() == 128,
+          "mask threshold was not applied correctly");
+
+    const QList<QPointF> contourPoints = {QPointF(10, 10), QPointF(30, 10), QPointF(30, 30)};
+    ImageContourLabel contour(contourPoints, Qt::red, 4);
+    check(contour.imagePos() == QPointF(20, 20)
+          && contour.boundingRect() == QRectF(-13, -13, 26, 26),
+          "contour geometry is incorrect");
+    QImage contourRender(80, 80, QImage::Format_ARGB32_Premultiplied);
+    contourRender.fill(Qt::transparent);
+    {
+        QPainter painter(&contourRender);
+        painter.translate(contour.imagePos());
+        painter.setBrush(Qt::green);
+        contour.paint(&painter, nullptr, nullptr);
+    }
+    check(contourRender.pixelColor(20, 20) == QColor(Qt::red)
+          && contourRender.pixelColor(25, 15).alpha() == 0,
+          "contour is not closed or was filled");
+    ImageContourLabel thresholdContour(contourPoints, Qt::red, 4);
+    const auto contourPenWidth = [&contourRender](ImageContourLabel &label) {
+        QPainter painter(&contourRender);
+        label.paint(&painter, nullptr, nullptr);
+        return painter.pen().widthF();
+    };
+    const QRectF initialContourBounds = thresholdContour.boundingRect();
+    thresholdContour.onViewScaleChanged(4.0 / 4.5);
+    check(thresholdContour.boundingRect() == initialContourBounds
+          && qFuzzyCompare(contourPenWidth(thresholdContour), qreal(4)),
+          "small contour thickness change caused an update");
+    thresholdContour.onViewScaleChanged(4.0 / 5.0);
+    check(qFuzzyCompare(contourPenWidth(thresholdContour), qreal(5))
+          && thresholdContour.boundingRect().width() > initialContourBounds.width(),
+          "large contour thickness change was not applied");
+    thresholdContour.onViewScaleChanged(10.0);
+    const QRectF thinBounds = thresholdContour.boundingRect();
+    thresholdContour.onViewScaleChanged(4.0 / 0.38);
+    check(thresholdContour.boundingRect() == thinBounds
+          && qFuzzyCompare(contourPenWidth(thresholdContour), qreal(0.4)),
+          "small thin-contour change caused an update");
+    thresholdContour.onViewScaleChanged(4.0 / 0.3);
+    check(qFuzzyCompare(contourPenWidth(thresholdContour), qreal(0.3))
+          && thresholdContour.boundingRect().width() < thinBounds.width(),
+          "large thin-contour change was not applied");
+    contour.onViewScaleChanged(2.0);
+    check(contour.boundingRect() == QRectF(-12, -12, 24, 24),
+          "contour bounds did not adapt to zoom");
+    contourRender.fill(Qt::transparent);
+    {
+        QPainter painter(&contourRender);
+        painter.scale(2, 2);
+        painter.translate(contour.imagePos());
+        contour.paint(&painter, nullptr, nullptr);
+    }
+    int strokePixels = 0;
+    for (int y = 16; y <= 24; ++y)
+        strokePixels += contourRender.pixelColor(50, y).alpha() != 0;
+    check(strokePixels == 4, "contour stroke width changed on screen after zoom");
+    ImageContourLabel emptyContour({});
+    check(emptyContour.boundingRect().isEmpty(), "empty contour has nonempty bounds");
+    ImageContourLabel pointContour({QPointF(7, 9)}, Qt::red, 4);
+    check(pointContour.imagePos() == QPointF(7, 9)
+          && pointContour.boundingRect().contains(QPointF(0, 0)),
+          "single-point contour geometry is incorrect");
+    contourRender.fill(Qt::transparent);
+    {
+        QPainter painter(&contourRender);
+        painter.translate(pointContour.imagePos());
+        pointContour.paint(&painter, nullptr, nullptr);
+    }
+    check(contourRender.pixelColor(7, 9).alpha() != 0, "single-point contour was not drawn");
+
     QImage image(100, 80, QImage::Format_ARGB32);
     image.fill(QColor(12, 34, 56, 78));
     widget.setImage(image);
@@ -53,19 +160,27 @@ int main(int argc, char **argv)
 
     auto *point = new CountingPoint(QPointF(10.5, 20.5));
     auto *text = new ImageTextLabel(QPointF(20.5, 30.5), "test");
-    auto *rect = new ImageRotatedRectLabel(21, 11, QPoint(40, 30), 30);
-    auto *ellipse = new ImageEllipseLabel(QPoint(50, 40), 12, 8, 30);
+    auto *rect = new ImageRotatedRectLabel(21, 11, QPoint(40, 30), 30.5);
+    auto *ellipse = new ImageEllipseLabel(QPoint(50, 40), 12, 8, 30.5);
+    const ImageRotatedRectLabel integerAngleRect(21, 11, QPoint(40, 30), 30);
+    const ImageEllipseLabel integerAngleEllipse(QPoint(50, 40), 12, 8, 30.0);
+    check(!qFuzzyCompare(rect->boundingRect().width(), integerAngleRect.boundingRect().width())
+          && !qFuzzyCompare(ellipse->boundingRect().width(), integerAngleEllipse.boundingRect().width()),
+          "fractional angles were truncated");
     auto *arrow = new ImageArrowLabel(QPoint(10, 10), QPoint(21, 15));
+    auto *viewContour = new ImageContourLabel(contourPoints);
     widget.addLabel(point);
     widget.addLabel(text);
     widget.addLabel(rect);
     widget.addLabel(ellipse);
     widget.addLabel(arrow);
-    check(view->scene()->items().size() == 6, "labels were not added");
+    widget.addLabel(viewContour);
+    check(view->scene()->items().size() == 7, "labels were not added");
     check(point->pos() == QPointF(10.5, 20.5) && text->pos() == QPointF(20.5, 30.5),
           "fractional positions lost");
     check(rect->pos() == QPointF(40, 30) && ellipse->pos() == QPointF(50, 40)
           && arrow->pos() == QPointF(15.5, 12.5), "geometry centers incorrect");
+    check(viewContour->pos() == QPointF(20, 20), "contour position is incorrect");
     check(point->flags().testFlag(QGraphicsItem::ItemIgnoresTransformations)
           && text->flags().testFlag(QGraphicsItem::ItemIgnoresTransformations),
           "screen-sized labels follow zoom");
@@ -121,12 +236,18 @@ int main(int argc, char **argv)
 
     const qreal before = view->transform().m11();
     const QRectF arrowBounds = arrow->boundingRect();
+    const QRectF contourBounds = viewContour->boundingRect();
     QWheelEvent wheel(QPointF(mouse), QPointF(view->viewport()->mapToGlobal(mouse)),
                       QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
                       Qt::NoScrollPhase, false);
     QApplication::sendEvent(view->viewport(), &wheel);
     check(std::abs(view->transform().m11() - before * 1.15) < 0.0001, "wheel zoom failed");
     check(arrow->boundingRect().width() < arrowBounds.width(), "arrow size did not adapt to zoom");
+    check(viewContour->boundingRect() == contourBounds,
+          "small view zoom unnecessarily changed contour bounds");
+    QApplication::sendEvent(view->viewport(), &wheel);
+    check(viewContour->boundingRect().width() < contourBounds.width(),
+          "contour thickness did not adapt to cumulative view zoom");
     check(!scale->text().isEmpty(), "zoom status missing");
 
     widget.setScaleFactorRange(0.5, 1.0);
@@ -143,12 +264,12 @@ int main(int argc, char **argv)
     check(std::abs(view->transform().m11() - 1.0) < 0.0001, "invalid zoom range was accepted");
 
     widget.addLabel(point);
-    check(view->scene()->items().size() == 6, "duplicate label added");
+    check(view->scene()->items().size() == 7, "duplicate label added");
     QGraphicsScene otherScene;
     auto *otherPoint = new CountingPoint(QPoint(2, 2));
     otherScene.addItem(otherPoint);
     widget.addLabel(otherPoint);
-    check(otherPoint->scene() == &otherScene && view->scene()->items().size() == 6,
+    check(otherPoint->scene() == &otherScene && view->scene()->items().size() == 7,
           "label was transferred from another scene");
     widget.clearLabels();
     check(CountingPoint::destroyed == 1 && view->scene()->items().size() == 1,

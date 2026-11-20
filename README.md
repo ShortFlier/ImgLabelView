@@ -7,7 +7,7 @@
 - 使用鼠标滚轮缩放图像，按住鼠标左键拖动以平移图像。
 - 底部状态栏显示图像大小、鼠标位置、像素值和当前缩放比例。
 - 灰度图显示单个灰度值；无透明通道的彩色图显示 RGB；带透明通道的图像显示 RGBA。16 位灰度图显示原始 16 位数值。灰度调色板的索引图像显示调色板对应的灰度值。
-- 支持点、文字、旋转矩形、圆、椭圆和箭头标签。
+- 支持点、文字、旋转矩形、圆、椭圆、箭头和闭合轮廓标签。
 
 ## 构建和运行
 
@@ -51,6 +51,7 @@ view->addLabel(new ImageRotatedRectLabel(QRect(50, 60, 100, 40), 30));
 view->addLabel(new ImageEllipseLabel(QPoint(150, 100), 30));
 view->addLabel(new ImageEllipseLabel(QPoint(200, 100), 40, 20, 30));
 view->addLabel(new ImageArrowLabel(QPoint(50, 50), QPoint(100, 80)));
+view->addLabel(new ImageContourLabel({QPointF(40, 40), QPointF(80, 40), QPointF(60, 70)}));
 
 // 将 view 加入布局，或设置为主窗口的中心控件。
 // view->clearLabels(); // 删除全部标签
@@ -63,7 +64,9 @@ view->addLabel(new ImageArrowLabel(QPoint(50, 50), QPoint(100, 80)));
 - `clearLabels()` 删除所有已添加标签。
 - `setScaleFactorRange(qreal minScale, qreal maxScale)` 设置滚轮缩放限制，默认范围为 `0.1` 到 `20.0`。范围必须为有限值，且满足 `0 < minScale <= maxScale`；无效输入会被拒绝并输出警告。设置范围不会立即改变当前缩放，限制在下一次滚轮缩放时生效。
 
-标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆和箭头的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
+标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆、箭头和轮廓的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。轮廓点按顺序连接并自动闭合，不填充内部。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
+
+为减少缩放时的轮廓更新开销，轮廓线宽仅在图像坐标下的目标线宽相对上次更新变化达到约 20% 时调整，因此屏幕线宽会在缩放过程中略有变化。
 
 调用 `clearLabels()` 或销毁视图后，不应再使用之前添加成功的标签指针。`ImageLabelView` 不继承 `QGraphicsView`，如从旧版本迁移，不能再直接通过组件调用 `QGraphicsView` 接口。
 

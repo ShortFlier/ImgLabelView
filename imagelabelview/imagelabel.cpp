@@ -7,7 +7,7 @@
 #include <utility>
 
 namespace {
-QRectF rotatedBounds(const QRectF &rect, int angle, qreal thickness)
+QRectF rotatedBounds(const QRectF &rect, qreal angle, qreal thickness)
 {
     QTransform transform;
     transform.rotate(angle);
@@ -69,14 +69,14 @@ void ImageTextLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     painter->drawText(QPointF(0, 0), _text);
 }
 
-ImageRotatedRectLabel::ImageRotatedRectLabel(QRect rect, int angle, QColor color, int thickness,
+ImageRotatedRectLabel::ImageRotatedRectLabel(QRect rect, qreal angle, QColor color, int thickness,
                                              QGraphicsItem *parent)
     : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
       _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
 {
 }
 
-ImageRotatedRectLabel::ImageRotatedRectLabel(int w, int h, QPoint center, int angle, QColor color,
+ImageRotatedRectLabel::ImageRotatedRectLabel(int w, int h, QPoint center, qreal angle, QColor color,
                                              int thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - w / 2.0, center.y() - h / 2.0, w, h),
       _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), qreal(thickness))),
@@ -114,14 +114,14 @@ ImageEllipseLabel::ImageEllipseLabel(QPoint center, int radius, QColor color, in
 {
 }
 
-ImageEllipseLabel::ImageEllipseLabel(QRect rect, int angle, QColor color, int thickness,
+ImageEllipseLabel::ImageEllipseLabel(QRect rect, qreal angle, QColor color, int thickness,
                                      QGraphicsItem *parent)
     : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
       _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
 {
 }
 
-ImageEllipseLabel::ImageEllipseLabel(QPoint center, int rx, int ry, int angle, QColor color,
+ImageEllipseLabel::ImageEllipseLabel(QPoint center, int rx, int ry, qreal angle, QColor color,
                                      int thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - rx, center.y() - ry, 2.0 * rx, 2.0 * ry),
       _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), qreal(thickness))),
@@ -200,6 +200,98 @@ void ImageArrowLabel::onViewScaleChanged(qreal viewScale)
         prepareGeometryChange();
         _thickness = thickness;
         _arrowSize = arrowSize;
+        update();
+    }
+}
+
+ImageMaskLabel::ImageMaskLabel(QPointF topLeft, QImage mask, QColor color, int threshold,
+                               int diaphaneity, QGraphicsItem *parent)
+    : ImageLabel(parent), _topLeft(topLeft)
+{
+    if (mask.isNull())
+        return;
+
+    const QImage grayscaleMask = mask.convertToFormat(QImage::Format_Grayscale8);
+    _overlay = QImage(grayscaleMask.size(), QImage::Format_ARGB32);
+    const int colorAlpha = (color.alpha() * qBound(0, diaphaneity, 255) + 127) / 255;
+
+    for (int y = 0; y < grayscaleMask.height(); ++y) {
+        const uchar *maskLine = grayscaleMask.constScanLine(y);
+        QRgb *overlayLine = reinterpret_cast<QRgb *>(_overlay.scanLine(y));
+        for (int x = 0; x < grayscaleMask.width(); ++x) {
+            int maskValue = maskLine[x];
+            if (threshold >= 0)
+                maskValue = maskValue > threshold ? 255 : 0;
+            const int alpha = (maskValue * colorAlpha + 127) / 255;
+            overlayLine[x] = qRgba(color.red(), color.green(), color.blue(), alpha);
+        }
+    }
+}
+
+QRectF ImageMaskLabel::boundingRect() const
+{
+    return QRectF(-_overlay.width() / 2.0, -_overlay.height() / 2.0,
+                  _overlay.width(), _overlay.height());
+}
+
+void ImageMaskLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    painter->drawImage(boundingRect().topLeft(), _overlay);
+}
+
+QPointF ImageMaskLabel::imagePos() const
+{
+    return _topLeft + QPointF(_overlay.width() / 2.0, _overlay.height() / 2.0);
+}
+
+ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color, int thickness,
+                                     QGraphicsItem *parent)
+    : ImageLabel(parent), _color(color),
+      _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
+{
+    _points.reserve(points.size());
+    for (const QPointF &point : points)
+        _points << point;
+    if (!_points.isEmpty()) {
+        _pointBounds = _points.boundingRect();
+        _center = _pointBounds.center();
+        _points.translate(-_center);
+        _pointBounds.translate(-_center);
+    }
+}
+
+QRectF ImageContourLabel::boundingRect() const
+{
+    if (_points.isEmpty())
+        return QRectF();
+    const qreal margin = _thickness / 2.0 + 1.0;
+    return _pointBounds.adjusted(-margin, -margin, margin, margin);
+}
+
+void ImageContourLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    if (_points.isEmpty())
+        return;
+    QPen pen(_color);
+    pen.setWidthF(_thickness);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter->setPen(pen);
+    painter->setBrush(Qt::NoBrush);
+    if (_points.size() == 1)
+        painter->drawPoint(_points.first());
+    else
+        painter->drawPolygon(_points);
+}
+
+void ImageContourLabel::onViewScaleChanged(qreal viewScale)
+{
+    if (_points.isEmpty())
+        return;
+    const qreal thickness = scaledThickness(_baseThickness, viewScale);
+    if (std::abs(thickness - _thickness) >= _thickness * 0.2) {
+        prepareGeometryChange();
+        _thickness = thickness;
         update();
     }
 }
