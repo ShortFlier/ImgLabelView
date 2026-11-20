@@ -37,6 +37,10 @@ ImageLabelView::ImageLabelView(QWidget *parent)
 
 ImageLabelView::~ImageLabelView()
 {
+    ui->graphicsView->horizontalScrollBar()->disconnect(this);
+    ui->graphicsView->verticalScrollBar()->disconnect(this);
+    ui->graphicsView->viewport()->removeEventFilter(this);
+
     delete ui;
 }
 
