@@ -1,9 +1,11 @@
 #include "imagelabel.h"
 
+#include <QDebug>
 #include <QFontMetricsF>
 #include <QPainter>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -208,16 +210,30 @@ ImageMaskLabel::ImageMaskLabel(QPointF topLeft, QImage mask, QColor color, int t
                                int diaphaneity, QGraphicsItem *parent)
     : ImageLabel(parent), _topLeft(topLeft)
 {
-    if (mask.isNull())
-        return;
+    setMask(topLeft, mask, color, threshold, diaphaneity);
+}
 
+bool ImageMaskLabel::setMask(QPointF topLeft, const QImage &mask, QColor color, int threshold,
+                             int diaphaneity)
+{
+    if (mask.isNull()) {
+        prepareGeometryChange();
+        _topLeft = topLeft;
+        _overlay = QImage();
+        update();
+        return true;
+    }
     const QImage grayscaleMask = mask.convertToFormat(QImage::Format_Grayscale8);
-    _overlay = QImage(grayscaleMask.size(), QImage::Format_ARGB32);
+    QImage overlay(grayscaleMask.size(), QImage::Format_ARGB32);
+    if (grayscaleMask.isNull() || overlay.isNull()) {
+        qWarning() << "ImageMaskLabel: failed to allocate mask image";
+        return false;
+    }
     const int colorAlpha = (color.alpha() * qBound(0, diaphaneity, 255) + 127) / 255;
 
     for (int y = 0; y < grayscaleMask.height(); ++y) {
         const uchar *maskLine = grayscaleMask.constScanLine(y);
-        QRgb *overlayLine = reinterpret_cast<QRgb *>(_overlay.scanLine(y));
+        QRgb *overlayLine = reinterpret_cast<QRgb *>(overlay.scanLine(y));
         for (int x = 0; x < grayscaleMask.width(); ++x) {
             int maskValue = maskLine[x];
             if (threshold >= 0)
@@ -226,6 +242,11 @@ ImageMaskLabel::ImageMaskLabel(QPointF topLeft, QImage mask, QColor color, int t
             overlayLine[x] = qRgba(color.red(), color.green(), color.blue(), alpha);
         }
     }
+    prepareGeometryChange();
+    _topLeft = topLeft;
+    _overlay = std::move(overlay);
+    update();
+    return true;
 }
 
 QRectF ImageMaskLabel::boundingRect() const
@@ -258,6 +279,8 @@ ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color,
         _points.translate(-_center);
         _pointBounds.translate(-_center);
     }
+
+    this->setCacheMode(QGraphicsItem::DeviceCoordinateCache);
 }
 
 QRectF ImageContourLabel::boundingRect() const
@@ -294,4 +317,159 @@ void ImageContourLabel::onViewScaleChanged(qreal viewScale)
         _thickness = thickness;
         update();
     }
+}
+
+ImageContourFastLabel::ImageContourFastLabel(const QList<QPointF> &points, QColor color, int pixel,
+                                             int diaphaneity, QGraphicsItem *parent)
+    : ImageMaskLabel(QPointF(), QImage(), color, -1, diaphaneity, parent),
+      _color(color), _basePixel(std::max(1, pixel)), _diaphaneity(diaphaneity)
+{
+    QPolygonF polygon;
+    polygon.reserve(points.size());
+    for (const QPointF &point : points) {
+        if (!std::isfinite(point.x()) || !std::isfinite(point.y())) {
+            qWarning() << "ImageContourFastLabel: non-finite contour point";
+            return;
+        }
+        polygon << point;
+    }
+    if (polygon.isEmpty())
+        return;
+    const QRectF bounds = polygon.boundingRect();
+    _center = bounds.center();
+    const qreal left = std::floor(bounds.left()) - 2;
+    const qreal top = std::floor(bounds.top()) - 2;
+    const qreal width = std::ceil(bounds.right()) - left + 3;
+    const qreal height = std::ceil(bounds.bottom()) - top + 3;
+    if (!std::isfinite(_center.x()) || !std::isfinite(_center.y())
+        || !std::isfinite(left) || !std::isfinite(top)
+        || !std::isfinite(width) || !std::isfinite(height)
+        || width < 1 || height < 1
+        || width > std::numeric_limits<int>::max() || height > std::numeric_limits<int>::max()) {
+        qWarning() << "ImageContourFastLabel: contour bounds are too large";
+        _center = QPointF();
+        return;
+    }
+    _skeleton = QImage(int(width), int(height), QImage::Format_RGB32);
+    if (_skeleton.isNull()) {
+        qWarning() << "ImageContourFastLabel: failed to allocate contour skeleton";
+        return;
+    }
+    _skeletonTopLeft = QPointF(left, top);
+    _skeleton.fill(Qt::black);
+    {
+        QPainter painter(&_skeleton);
+        painter.translate(-_skeletonTopLeft);
+        painter.setPen(QPen(Qt::white, 1));
+        painter.setBrush(Qt::NoBrush);
+        if (polygon.size() == 1)
+            painter.drawPoint(polygon.first());
+        else
+            painter.drawPolygon(polygon);
+    }
+    onViewScaleChanged(1.0);
+}
+
+QRectF ImageContourFastLabel::boundingRect() const
+{
+    return QRectF(_topLeft - _center, _overlay.size());
+}
+
+void ImageContourFastLabel::onViewScaleChanged(qreal viewScale)
+{
+    if (_skeleton.isNull())
+        return;
+    if (!std::isfinite(viewScale) || viewScale <= 0) {
+        qWarning() << "ImageContourFastLabel: invalid view scale" << viewScale;
+        return;
+    }
+    const qreal scaledPixel = std::max(qreal(1), _basePixel / viewScale);
+    if (!std::isfinite(scaledPixel) || scaledPixel > std::numeric_limits<int>::max()) {
+        qWarning() << "ImageContourFastLabel: contour width is too large";
+        return;
+    }
+    const int radius = int(std::floor(scaledPixel / 2));
+    const int pixel = radius * 2 + 1;
+    if (pixel == _maskPixel)
+        return;
+    if (!ensureCapacity(radius))
+        return;
+
+    const int alpha = (_color.alpha() * qBound(0, _diaphaneity, 255) + 127) / 255;
+    const QRgb active = qRgba(_color.red(), _color.green(), _color.blue(), alpha);
+    for (int y = 0; y < _overlay.height(); ++y) {
+        const auto *distance = reinterpret_cast<const quint32 *>(_distances.constScanLine(y));
+        auto *line = reinterpret_cast<QRgb *>(_overlay.scanLine(y));
+        for (int x = 0; x < _overlay.width(); ++x)
+            line[x] = distance[x] <= quint32(radius) ? active : qRgba(0, 0, 0, 0);
+    }
+    _maskPixel = pixel;
+    update();
+}
+
+bool ImageContourFastLabel::ensureCapacity(int radius)
+{
+    if (radius <= _capacityRadius)
+        return true;
+    const qint64 capacity = std::max(qint64(radius), qint64(_capacityRadius) * 2);
+    const qint64 width = _skeleton.width() + capacity * 2;
+    const qint64 height = _skeleton.height() + capacity * 2;
+    if (width > std::numeric_limits<int>::max() || height > std::numeric_limits<int>::max()) {
+        qWarning() << "ImageContourFastLabel: contour mask is too large";
+        return false;
+    }
+    QImage distances(int(width), int(height), QImage::Format_RGB32);
+    QImage overlay(int(width), int(height), QImage::Format_ARGB32);
+    if (distances.isNull() || overlay.isNull()) {
+        qWarning() << "ImageContourFastLabel: failed to allocate contour mask";
+        return false;
+    }
+    distances.fill(std::numeric_limits<quint32>::max());
+    const int offset = int(capacity);
+    for (int y = 0; y < _skeleton.height(); ++y) {
+        const auto *source = reinterpret_cast<const QRgb *>(_skeleton.constScanLine(y));
+        auto *line = reinterpret_cast<quint32 *>(distances.scanLine(y + offset));
+        for (int x = 0; x < _skeleton.width(); ++x) {
+            if (qRed(source[x]) != 0)
+                line[x + offset] = 0;
+        }
+    }
+    // Two 8-neighbour passes compute the square-dilation distance from the skeleton.
+    const quint32 infinity = std::numeric_limits<quint32>::max();
+    const int w = distances.width();
+    const int h = distances.height();
+    for (int y = 0; y < h; ++y) {
+        auto *line = reinterpret_cast<quint32 *>(distances.scanLine(y));
+        const auto *above = y > 0 ? reinterpret_cast<const quint32 *>(distances.constScanLine(y - 1)) : nullptr;
+        for (int x = 0; x < w; ++x) {
+            quint32 nearest = infinity;
+            if (x > 0) nearest = std::min(nearest, line[x - 1]);
+            if (above) {
+                nearest = std::min(nearest, above[x]);
+                if (x > 0) nearest = std::min(nearest, above[x - 1]);
+                if (x + 1 < w) nearest = std::min(nearest, above[x + 1]);
+            }
+            if (nearest != infinity) line[x] = std::min(line[x], nearest + 1);
+        }
+    }
+    for (int y = h - 1; y >= 0; --y) {
+        auto *line = reinterpret_cast<quint32 *>(distances.scanLine(y));
+        const auto *below = y + 1 < h ? reinterpret_cast<const quint32 *>(distances.constScanLine(y + 1)) : nullptr;
+        for (int x = w - 1; x >= 0; --x) {
+            quint32 nearest = infinity;
+            if (x + 1 < w) nearest = std::min(nearest, line[x + 1]);
+            if (below) {
+                nearest = std::min(nearest, below[x]);
+                if (x > 0) nearest = std::min(nearest, below[x - 1]);
+                if (x + 1 < w) nearest = std::min(nearest, below[x + 1]);
+            }
+            if (nearest != infinity) line[x] = std::min(line[x], nearest + 1);
+        }
+    }
+    prepareGeometryChange();
+    _topLeft = _skeletonTopLeft - QPointF(offset, offset);
+    _distances = std::move(distances);
+    _overlay = std::move(overlay);
+    _capacityRadius = offset;
+    return true;
 }

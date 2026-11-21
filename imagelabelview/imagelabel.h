@@ -176,13 +176,15 @@ public:
     QPointF imagePos() const override;
     void onViewScaleChanged(qreal viewScale) override { Q_UNUSED(viewScale); }
 
-private:
+protected:
+    bool setMask(QPointF topLeft, const QImage &mask, QColor color, int threshold, int diaphaneity);
     QPointF _topLeft;
     QImage _overlay;
 };
 
 
 //闭合轮廓
+//如果轮廓点数较多导致卡顿，使用ImageContourFastLabel代替
 class ImageContourLabel : public ImageLabel
 {
 public:
@@ -205,4 +207,35 @@ private:
     QColor _color;
     qreal _baseThickness;
     qreal _thickness;
+};
+
+
+//闭合轮廓高性能版本
+class ImageContourFastLabel : public ImageMaskLabel
+{
+public:
+    /*
+    @points 图片坐标系中的轮廓点，按顺序连接并自动闭合；空点集不绘制
+    @color 轮廓线颜色
+    @pixel 缩放比例为1时的线宽，屏幕像素，最小为1，按奇数变动
+    @diaphaneity 不透明度，范围0-255
+    缩放时图像像素线宽取最接近的奇数（相等时向上），且不小于1。
+    */
+    ImageContourFastLabel(const QList<QPointF> &points, QColor color = Qt::red,
+                           int pixel = 1, int diaphaneity = 200, QGraphicsItem *parent = nullptr);
+    QRectF boundingRect() const override;
+    QPointF imagePos() const override { return _center; }
+    void onViewScaleChanged(qreal viewScale) override;
+
+private:
+    bool ensureCapacity(int radius);
+    QImage _skeleton;
+    QImage _distances;
+    QPointF _skeletonTopLeft;
+    QPointF _center;
+    QColor _color;
+    int _basePixel;
+    int _diaphaneity;
+    int _maskPixel = 0;
+    int _capacityRadius = -1;
 };

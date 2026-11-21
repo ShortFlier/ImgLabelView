@@ -29,6 +29,13 @@ public:
     static int destroyed;
 };
 int CountingPoint::destroyed = 0;
+
+class InspectableFastContour : public ImageContourFastLabel
+{
+public:
+    using ImageContourFastLabel::ImageContourFastLabel;
+    const uchar *overlayData() const { return _overlay.constBits(); }
+};
 }
 
 int main(int argc, char **argv)
@@ -152,6 +159,71 @@ int main(int argc, char **argv)
     }
     check(contourRender.pixelColor(7, 9).alpha() != 0, "single-point contour was not drawn");
 
+    InspectableFastContour flashContour(contourPoints, QColor(40, 80, 120), 1, 200);
+    const auto renderFlash = [&contourRender](ImageContourFastLabel &label) {
+        contourRender.fill(Qt::transparent);
+        QPainter painter(&contourRender);
+        painter.translate(label.imagePos());
+        label.paint(&painter, nullptr, nullptr);
+    };
+    const auto flashStrokeWidth = [&contourRender]() {
+        int width = 0;
+        for (int y = 4; y <= 16; ++y)
+            width += contourRender.pixelColor(22, y).alpha() != 0;
+        return width;
+    };
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 1 && contourRender.pixelColor(20, 20).alpha() == 200
+          && contourRender.pixelColor(20, 20).blue() == 120
+          && contourRender.pixelColor(25, 15).alpha() == 0,
+          "flash contour mask has incorrect closure, color, opacity or width");
+    const QImage originalFlash = contourRender.copy();
+    const QPointF flashPosition = flashContour.imagePos();
+    const QRectF flashBounds = flashContour.boundingRect();
+    flashContour.onViewScaleChanged(4.0);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 1 && flashContour.boundingRect() == flashBounds,
+          "flash contour width dropped below one image pixel");
+    flashContour.onViewScaleChanged(0.5);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 3, "flash contour did not round two pixels up to three");
+    flashContour.onViewScaleChanged(0.25);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 5 && flashContour.imagePos() == flashPosition
+          && flashContour.boundingRect().width() > flashBounds.width(),
+          "flash contour did not widen or moved when zooming out");
+    const QRectF wideFlashBounds = flashContour.boundingRect();
+    const uchar *wideOverlay = flashContour.overlayData();
+    flashContour.onViewScaleChanged(0.24);
+    check(flashContour.boundingRect() == wideFlashBounds,
+          "small scale changes unexpectedly changed flash contour width");
+    flashContour.onViewScaleChanged(0.5);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 3 && flashContour.overlayData() == wideOverlay,
+          "flash contour did not reuse the image when shrinking to three pixels");
+    flashContour.onViewScaleChanged(1.0);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 1 && contourRender == originalFlash
+          && flashContour.overlayData() == wideOverlay,
+          "flash contour did not restore its original mask when shrinking");
+    flashContour.onViewScaleChanged(0.25);
+    renderFlash(flashContour);
+    check(flashStrokeWidth() == 5 && flashContour.overlayData() == wideOverlay,
+          "flash contour did not reuse the image when widening again");
+    ImageContourFastLabel evenPixelContour(contourPoints, Qt::red, 2, 255);
+    renderFlash(evenPixelContour);
+    check(flashStrokeWidth() == 3, "even initial flash contour width was not rounded up");
+    ImageContourFastLabel emptyFlash({});
+    check(emptyFlash.boundingRect().isEmpty(), "empty flash contour has nonempty bounds");
+    ImageContourFastLabel pointFlash({QPointF(7, 9)}, Qt::red, 1, 255);
+    renderFlash(pointFlash);
+    check(contourRender.pixelColor(7, 9).alpha() == 255, "single-point flash contour was not drawn");
+    const QImage originalPoint = contourRender.copy();
+    pointFlash.onViewScaleChanged(0.2);
+    pointFlash.onViewScaleChanged(1.0);
+    renderFlash(pointFlash);
+    check(contourRender == originalPoint, "isolated contour point was lost after resizing");
+
     QImage image(100, 80, QImage::Format_ARGB32);
     image.fill(QColor(12, 34, 56, 78));
     widget.setImage(image);
@@ -271,6 +343,14 @@ int main(int argc, char **argv)
     widget.addLabel(otherPoint);
     check(otherPoint->scene() == &otherScene && view->scene()->items().size() == 7,
           "label was transferred from another scene");
+    auto *viewFlash = new ImageContourFastLabel(contourPoints, Qt::red, 1, 255);
+    widget.addLabel(viewFlash);
+    const QPointF flashScenePosition = viewFlash->pos();
+    const QRectF sceneBounds = viewFlash->boundingRect();
+    viewFlash->onViewScaleChanged(0.25);
+    check(viewFlash->pos() == flashScenePosition
+          && viewFlash->boundingRect().width() > sceneBounds.width(),
+          "flash contour scene position or bounds changed incorrectly on zoom");
     widget.clearLabels();
     check(CountingPoint::destroyed == 1 && view->scene()->items().size() == 1,
           "clearLabels did not delete labels");

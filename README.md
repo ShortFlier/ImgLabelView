@@ -52,6 +52,7 @@ view->addLabel(new ImageEllipseLabel(QPoint(150, 100), 30));
 view->addLabel(new ImageEllipseLabel(QPoint(200, 100), 40, 20, 30));
 view->addLabel(new ImageArrowLabel(QPoint(50, 50), QPoint(100, 80)));
 view->addLabel(new ImageContourLabel({QPointF(40, 40), QPointF(80, 40), QPointF(60, 70)}));
+view->addLabel(new ImageContourFastLabel({QPointF(100, 40), QPointF(140, 40), QPointF(120, 70)}));
 
 // 将 view 加入布局，或设置为主窗口的中心控件。
 // view->clearLabels(); // 删除全部标签
@@ -67,6 +68,8 @@ view->addLabel(new ImageContourLabel({QPointF(40, 40), QPointF(80, 40), QPointF(
 标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆、箭头和轮廓的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。轮廓点按顺序连接并自动闭合，不填充内部。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
 
 为减少缩放时的轮廓更新开销，轮廓线宽仅在图像坐标下的目标线宽相对上次更新变化达到约 20% 时调整，因此屏幕线宽会在缩放过程中略有变化。
+
+`ImageContourFastLabel` 将闭合轮廓缓存为掩膜，适用于轮廓点数较多的情况。图像坐标线宽取最接近的奇数（相等时向上），最小为 1，缩小时按比例增加；线宽变化时复用缓存的距离图和掩膜，容量不足时才扩容。其内存使用量与轮廓外接矩形面积成正比。
 
 调用 `clearLabels()` 或销毁视图后，不应再使用之前添加成功的标签指针。`ImageLabelView` 不继承 `QGraphicsView`，如从旧版本迁移，不能再直接通过组件调用 `QGraphicsView` 接口。
 
