@@ -31,8 +31,8 @@ public:
     @thickness "+"线条宽度
     @angle "+"的旋转角度
     */
-    ImagePointLabel(QPointF point, int size = 20, QColor color = Qt::red,
-                    int thickness = 4, int angle = 45, QGraphicsItem *parent = nullptr);
+    ImagePointLabel(QPointF point, qreal size = 20, QColor color = Qt::red,
+                    qreal thickness = 4, qreal angle = 45, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _point; }
@@ -40,10 +40,10 @@ public:
 
 private:
     QPointF _point;
-    int _size;
+    qreal _size;
     QColor _color;
-    int _thickness;
-    int _angle;
+    qreal _thickness;
+    qreal _angle;
 };
 
 //文字显示
@@ -75,15 +75,15 @@ public:
     @rect 未旋转的矩形区域，图片坐标系；以矩形中心为旋转中心
     @angle 旋转角度，单位为度；顺时针为正
     */
-    ImageRotatedRectLabel(QRect rect, qreal angle = 0, QColor color = Qt::red,
-                          int thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageRotatedRectLabel(QRectF rect, qreal angle = 0, QColor color = Qt::red,
+                          qreal thickness = 4, QGraphicsItem *parent = nullptr);
     /*
     @w、@h 未旋转矩形的宽和高，图片像素
     @center 矩形中心位置，图片坐标系
     @angle 旋转角度，单位为度；顺时针为正
     */
-    ImageRotatedRectLabel(int w, int h, QPoint center, qreal angle = 0, QColor color = Qt::red,
-                          int thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageRotatedRectLabel(qreal w, qreal h, QPointF center, qreal angle = 0, QColor color = Qt::red,
+                          qreal thickness = 4, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _rect.center(); }
@@ -104,21 +104,23 @@ public:
     /*
     此函数用于构造圆
     */
-    ImageEllipseLabel(QPoint center, int radius, QColor color = Qt::red,
-                      int thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageEllipseLabel(QPointF center, qreal radius, QColor color = Qt::red,
+                      qreal thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageEllipseLabel(QPointF center, qreal radius, Qt::GlobalColor color,
+                      qreal thickness = 4, QGraphicsItem *parent = nullptr);
     /*
     @rect 未旋转椭圆的外接矩形，图片坐标系；以矩形中心为旋转中心
     @angle 旋转角度，单位为度；顺时针为正
     */
-    ImageEllipseLabel(QRect rect, qreal angle, QColor color = Qt::red,
-                      int thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageEllipseLabel(QRectF rect, qreal angle, QColor color = Qt::red,
+                      qreal thickness = 4, QGraphicsItem *parent = nullptr);
     /*
     @center 椭圆中心位置，图片坐标系
     @rx、@ry 椭圆的水平和垂直半径，图片像素
     @angle 旋转角度，单位为度；绕椭圆中心旋转，顺时针为正
     */
-    ImageEllipseLabel(QPoint center, int rx, int ry, qreal angle, QColor color = Qt::red,
-                      int thickness = 4, QGraphicsItem *parent = nullptr);
+    ImageEllipseLabel(QPointF center, qreal rx, qreal ry, qreal angle, QColor color = Qt::red,
+                      qreal thickness = 4, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _rect.center(); }
@@ -140,8 +142,8 @@ public:
     @start、@end 图片坐标中从start指向end的箭头"->"
     @arrowSize ">"的尺寸大小
     */
-    ImageArrowLabel(QPoint start, QPoint end, QColor color = Qt::red,
-                    int thickness = 2, int arrowSize = 5, QGraphicsItem *parent = nullptr);
+    ImageArrowLabel(QPointF start, QPointF end, QColor color = Qt::red,
+                    qreal thickness = 2, qreal arrowSize = 5, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override;
@@ -194,7 +196,7 @@ public:
     @thickness 轮廓线宽，屏幕像素；缩放时线宽按约20%的变化阈值更新
     */
     ImageContourLabel(const QList<QPointF> &points, QColor color = Qt::red,
-                      int thickness = 2, QGraphicsItem *parent = nullptr);
+                      qreal thickness = 2, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _center; }
@@ -217,12 +219,12 @@ public:
     /*
     @points 图片坐标系中的轮廓点，按顺序连接并自动闭合；空点集不绘制
     @color 轮廓线颜色
-    @pixel 缩放比例为1时的线宽，屏幕像素，最小为1，按奇数变动
+    @pixel 缩放比例为1时的目标线宽，屏幕像素，可为小数，最小为1
     @diaphaneity 不透明度，范围0-255
     缩放时图像像素线宽取最接近的奇数（相等时向上），且不小于1。
     */
     ImageContourFastLabel(const QList<QPointF> &points, QColor color = Qt::red,
-                           int pixel = 1, int diaphaneity = 200, QGraphicsItem *parent = nullptr);
+                           qreal pixel = 1, int diaphaneity = 200, QGraphicsItem *parent = nullptr);
     QRectF boundingRect() const override;
     QPointF imagePos() const override { return _center; }
     void onViewScaleChanged(qreal viewScale) override;
@@ -234,7 +236,7 @@ private:
     QPointF _skeletonTopLeft;
     QPointF _center;
     QColor _color;
-    int _basePixel;
+    qreal _basePixel;
     int _diaphaneity;
     int _maskPixel = 0;
     int _capacityRadius = -1;

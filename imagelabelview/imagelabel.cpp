@@ -28,7 +28,7 @@ qreal scaledThickness(qreal base, qreal scale)
 }
 }
 
-ImagePointLabel::ImagePointLabel(QPointF point, int size, QColor color, int thickness, int angle,
+ImagePointLabel::ImagePointLabel(QPointF point, qreal size, QColor color, qreal thickness, qreal angle,
                                  QGraphicsItem *parent)
     : ImageLabel(parent), _point(point), _size(size), _color(color),
       _thickness(thickness), _angle(angle)
@@ -45,7 +45,9 @@ QRectF ImagePointLabel::boundingRect() const
 
 void ImagePointLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
-    painter->setPen(QPen(_color, _thickness));
+    QPen pen(_color);
+    pen.setWidthF(_thickness);
+    painter->setPen(pen);
     painter->rotate(_angle);
     const qreal half = _size / 2.0;
     painter->drawLine(QPointF(-half, 0), QPointF(half, 0));
@@ -71,17 +73,17 @@ void ImageTextLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     painter->drawText(QPointF(0, 0), _text);
 }
 
-ImageRotatedRectLabel::ImageRotatedRectLabel(QRect rect, qreal angle, QColor color, int thickness,
+ImageRotatedRectLabel::ImageRotatedRectLabel(QRectF rect, qreal angle, QColor color, qreal thickness,
                                              QGraphicsItem *parent)
     : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
-      _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
+      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
 {
 }
 
-ImageRotatedRectLabel::ImageRotatedRectLabel(int w, int h, QPoint center, qreal angle, QColor color,
-                                             int thickness, QGraphicsItem *parent)
+ImageRotatedRectLabel::ImageRotatedRectLabel(qreal w, qreal h, QPointF center, qreal angle, QColor color,
+                                             qreal thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - w / 2.0, center.y() - h / 2.0, w, h),
-      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), qreal(thickness))),
+      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), thickness)),
       _thickness(_baseThickness)
 {
 }
@@ -110,23 +112,29 @@ void ImageRotatedRectLabel::onViewScaleChanged(qreal viewScale)
     }
 }
 
-ImageEllipseLabel::ImageEllipseLabel(QPoint center, int radius, QColor color, int thickness,
+ImageEllipseLabel::ImageEllipseLabel(QPointF center, qreal radius, QColor color, qreal thickness,
                                      QGraphicsItem *parent)
     : ImageEllipseLabel(center, radius, radius, 0, color, thickness, parent)
 {
 }
 
-ImageEllipseLabel::ImageEllipseLabel(QRect rect, qreal angle, QColor color, int thickness,
+ImageEllipseLabel::ImageEllipseLabel(QPointF center, qreal radius, Qt::GlobalColor color, qreal thickness,
                                      QGraphicsItem *parent)
-    : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
-      _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
+    : ImageEllipseLabel(center, radius, QColor(color), thickness, parent)
 {
 }
 
-ImageEllipseLabel::ImageEllipseLabel(QPoint center, int rx, int ry, qreal angle, QColor color,
-                                     int thickness, QGraphicsItem *parent)
+ImageEllipseLabel::ImageEllipseLabel(QRectF rect, qreal angle, QColor color, qreal thickness,
+                                     QGraphicsItem *parent)
+    : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
+      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
+{
+}
+
+ImageEllipseLabel::ImageEllipseLabel(QPointF center, qreal rx, qreal ry, qreal angle, QColor color,
+                                     qreal thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - rx, center.y() - ry, 2.0 * rx, 2.0 * ry),
-      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), qreal(thickness))),
+      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), thickness)),
       _thickness(_baseThickness)
 {
 }
@@ -155,11 +163,11 @@ void ImageEllipseLabel::onViewScaleChanged(qreal viewScale)
     }
 }
 
-ImageArrowLabel::ImageArrowLabel(QPoint start, QPoint end, QColor color, int thickness,
-                                 int arrowSize, QGraphicsItem *parent)
+ImageArrowLabel::ImageArrowLabel(QPointF start, QPointF end, QColor color, qreal thickness,
+                                 qreal arrowSize, QGraphicsItem *parent)
     : ImageLabel(parent), _start(start), _end(end), _color(color),
-      _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness),
-      _baseArrowSize(std::max(qreal(0.1), qreal(arrowSize))), _arrowSize(_baseArrowSize)
+      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness),
+      _baseArrowSize(std::max(qreal(0.1), arrowSize)), _arrowSize(_baseArrowSize)
 {
 }
 
@@ -265,10 +273,10 @@ QPointF ImageMaskLabel::imagePos() const
     return _topLeft + QPointF(_overlay.width() / 2.0, _overlay.height() / 2.0);
 }
 
-ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color, int thickness,
+ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color, qreal thickness,
                                      QGraphicsItem *parent)
     : ImageLabel(parent), _color(color),
-      _baseThickness(std::max(qreal(0.1), qreal(thickness))), _thickness(_baseThickness)
+      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
 {
     _points.reserve(points.size());
     for (const QPointF &point : points)
@@ -319,11 +327,15 @@ void ImageContourLabel::onViewScaleChanged(qreal viewScale)
     }
 }
 
-ImageContourFastLabel::ImageContourFastLabel(const QList<QPointF> &points, QColor color, int pixel,
+ImageContourFastLabel::ImageContourFastLabel(const QList<QPointF> &points, QColor color, qreal pixel,
                                              int diaphaneity, QGraphicsItem *parent)
     : ImageMaskLabel(QPointF(), QImage(), color, -1, diaphaneity, parent),
-      _color(color), _basePixel(std::max(1, pixel)), _diaphaneity(diaphaneity)
+      _color(color), _basePixel(std::max(qreal(1), pixel)), _diaphaneity(diaphaneity)
 {
+    if (!std::isfinite(pixel)) {
+        qWarning() << "ImageContourFastLabel: invalid contour width" << pixel;
+        return;
+    }
     QPolygonF polygon;
     polygon.reserve(points.size());
     for (const QPointF &point : points) {

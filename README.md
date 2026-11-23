@@ -37,8 +37,8 @@ ctest --test-dir build --output-on-failure
 #include "imagelabelview/imagelabelview.h"
 
 #include <QImage>
-#include <QPoint>
-#include <QRect>
+#include <QPointF>
+#include <QRectF>
 
 // 例如在 QWidget 派生窗口中：
 auto *view = new ImageLabelView(this);
@@ -47,10 +47,10 @@ view->setScaleFactorRange(0.1, 20.0);
 
 view->addLabel(new ImagePointLabel(QPointF(100.5, 120.5)));
 view->addLabel(new ImageTextLabel(QPointF(100, 120), "目标"));
-view->addLabel(new ImageRotatedRectLabel(QRect(50, 60, 100, 40), 30));
-view->addLabel(new ImageEllipseLabel(QPoint(150, 100), 30));
-view->addLabel(new ImageEllipseLabel(QPoint(200, 100), 40, 20, 30));
-view->addLabel(new ImageArrowLabel(QPoint(50, 50), QPoint(100, 80)));
+view->addLabel(new ImageRotatedRectLabel(QRectF(50.5, 60.5, 100.5, 40.5), 30));
+view->addLabel(new ImageEllipseLabel(QPointF(150.5, 100.5), 30.5));
+view->addLabel(new ImageEllipseLabel(QPointF(200.5, 100.5), 40.5, 20.5, 30));
+view->addLabel(new ImageArrowLabel(QPointF(50.5, 50.5), QPointF(100.5, 80.5)));
 view->addLabel(new ImageContourLabel({QPointF(40, 40), QPointF(80, 40), QPointF(60, 70)}));
 view->addLabel(new ImageContourFastLabel({QPointF(100, 40), QPointF(140, 40), QPointF(120, 70)}));
 
@@ -66,6 +66,8 @@ view->addLabel(new ImageContourFastLabel({QPointF(100, 40), QPointF(140, 40), QP
 - `setScaleFactorRange(qreal minScale, qreal maxScale)` 设置滚轮缩放限制，默认范围为 `0.1` 到 `20.0`。范围必须为有限值，且满足 `0 < minScale <= maxScale`；无效输入会被拒绝并输出警告。设置范围不会立即改变当前缩放，限制在下一次滚轮缩放时生效。
 
 标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆、箭头和轮廓的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。轮廓点按顺序连接并自动闭合，不填充内部。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
+
+点、矩形、圆、椭圆、箭头和轮廓的坐标及相应的尺寸、线宽和角度支持浮点值。高速轮廓的目标线宽也可为浮点值，但实际图像像素线宽仍会取整。
 
 为减少缩放时的轮廓更新开销，轮廓线宽仅在图像坐标下的目标线宽相对上次更新变化达到约 20% 时调整，因此屏幕线宽会在缩放过程中略有变化。
 

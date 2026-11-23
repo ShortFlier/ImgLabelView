@@ -53,6 +53,20 @@ int main(int argc, char **argv)
     auto *scale = widget.findChild<QLabel *>("scaleLabel");
     check(view && size && position && pixel && scale, "UI controls missing");
 
+    ImagePointLabel fractionalPoint(QPointF(10.5, 20.5), 20.5, Qt::red, 1.5, 45.5);
+    check(fractionalPoint.boundingRect() == QRectF(-12, -12, 24, 24),
+          "fractional point size or thickness was not preserved");
+    QImage pointRender(50, 50, QImage::Format_ARGB32_Premultiplied);
+    pointRender.fill(Qt::transparent);
+    {
+        QPainter painter(&pointRender);
+        fractionalPoint.paint(&painter, nullptr, nullptr);
+        check(qFuzzyCompare(painter.pen().widthF(), qreal(1.5))
+              && qFuzzyCompare(painter.transform().m11(), std::cos(qDegreesToRadians(qreal(45.5))))
+              && qFuzzyCompare(painter.transform().m12(), std::sin(qDegreesToRadians(qreal(45.5)))),
+              "fractional point thickness or angle was not preserved");
+    }
+
     QImage mask(4, 2, QImage::Format_Grayscale8);
     for (int y = 0; y < mask.height(); ++y) {
         uchar *line = mask.scanLine(y);
@@ -112,6 +126,14 @@ int main(int argc, char **argv)
         label.paint(&painter, nullptr, nullptr);
         return painter.pen().widthF();
     };
+    ImageContourLabel fractionalContour(contourPoints, Qt::red, 1.5);
+    check(qFuzzyCompare(contourPenWidth(fractionalContour), qreal(1.5))
+          && fractionalContour.boundingRect() == QRectF(-11.75, -11.75, 23.5, 23.5),
+          "fractional contour thickness was not preserved");
+    fractionalContour.onViewScaleChanged(2.0);
+    check(qFuzzyCompare(contourPenWidth(fractionalContour), qreal(0.75))
+          && fractionalContour.boundingRect() == QRectF(-11.375, -11.375, 22.75, 22.75),
+          "fractional contour thickness did not scale correctly");
     const QRectF initialContourBounds = thresholdContour.boundingRect();
     thresholdContour.onViewScaleChanged(4.0 / 4.5);
     check(thresholdContour.boundingRect() == initialContourBounds
@@ -213,6 +235,12 @@ int main(int argc, char **argv)
     ImageContourFastLabel evenPixelContour(contourPoints, Qt::red, 2, 255);
     renderFlash(evenPixelContour);
     check(flashStrokeWidth() == 3, "even initial flash contour width was not rounded up");
+    ImageContourFastLabel fractionalPixelContour(contourPoints, Qt::red, 1.75, 255);
+    renderFlash(fractionalPixelContour);
+    check(flashStrokeWidth() == 1, "fractional fast contour width was not rounded correctly");
+    fractionalPixelContour.onViewScaleChanged(0.6);
+    renderFlash(fractionalPixelContour);
+    check(flashStrokeWidth() == 3, "fractional fast contour width was lost before scaling");
     ImageContourFastLabel emptyFlash({});
     check(emptyFlash.boundingRect().isEmpty(), "empty flash contour has nonempty bounds");
     ImageContourFastLabel pointFlash({QPointF(7, 9)}, Qt::red, 1, 255);
@@ -223,6 +251,54 @@ int main(int argc, char **argv)
     pointFlash.onViewScaleChanged(1.0);
     renderFlash(pointFlash);
     check(contourRender == originalPoint, "isolated contour point was lost after resizing");
+
+    const QPointF fractionalCenter(40.25, 30.5);
+    const QRectF fractionalRect(29.5, 24.875, 21.5, 11.25);
+    ImageRotatedRectLabel rectFromBounds(fractionalRect, 0, Qt::red, 1.5);
+    ImageRotatedRectLabel rectFromCenter(21.5, 11.25, fractionalCenter, 0, Qt::red, 1.5);
+    check(rectFromBounds.imagePos() == fractionalCenter
+          && rectFromCenter.imagePos() == fractionalCenter
+          && rectFromBounds.boundingRect() == rectFromCenter.boundingRect()
+          && qFuzzyCompare(rectFromCenter.boundingRect().width(),
+                           qreal(21.5 + 2 * (1.5 * 0.7071067811865476 + 1.0)))
+          && qFuzzyCompare(rectFromCenter.boundingRect().height(),
+                           qreal(11.25 + 2 * (1.5 * 0.7071067811865476 + 1.0))),
+          "fractional rectangle geometry was not preserved");
+
+    ImageEllipseLabel ellipseFromBounds(fractionalRect, 0, Qt::red, 1.5);
+    ImageEllipseLabel ellipseFromRadii(fractionalCenter, 10.75, 5.625, 0, Qt::red, 1.5);
+    ImageEllipseLabel circle(fractionalCenter, 5.625, Qt::red, 1.5);
+    ImageEllipseLabel circleWithColor(fractionalCenter, 5.625, QColor(Qt::red), 1.5);
+    check(ellipseFromBounds.imagePos() == fractionalCenter
+          && ellipseFromBounds.boundingRect() == rectFromBounds.boundingRect(),
+          "fractional ellipse rectangle was not preserved");
+    check(ellipseFromRadii.imagePos() == fractionalCenter
+          && ellipseFromRadii.boundingRect() == ellipseFromBounds.boundingRect(),
+          "fractional ellipse geometry was not preserved");
+    check(circle.imagePos() == fractionalCenter
+          && circle.boundingRect() == circleWithColor.boundingRect()
+          && qFuzzyCompare(circle.boundingRect().width(), rectFromCenter.boundingRect().height())
+          && qFuzzyCompare(circle.boundingRect().height(), rectFromCenter.boundingRect().height()),
+          "fractional circle geometry was not preserved");
+
+    ImageArrowLabel fractionalArrow(QPointF(1.25, 2.5), QPointF(10.75, 8.5),
+                                    Qt::red, 1.5, 3.25);
+    check(fractionalArrow.imagePos() == QPointF(6, 5.5)
+          && fractionalArrow.boundingRect() == QRectF(-9.75, -8, 19.5, 16),
+          "fractional arrow geometry was not preserved");
+    const auto penWidth = [&contourRender](ImageLabel &label) {
+        QPainter painter(&contourRender);
+        label.paint(&painter, nullptr, nullptr);
+        return painter.pen().widthF();
+    };
+    check(qFuzzyCompare(penWidth(rectFromCenter), qreal(1.5))
+          && qFuzzyCompare(penWidth(ellipseFromRadii), qreal(1.5))
+          && qFuzzyCompare(penWidth(fractionalArrow), qreal(1.5)),
+          "fractional line width was not preserved");
+    fractionalArrow.onViewScaleChanged(2);
+    check(fractionalArrow.boundingRect() == QRectF(-7.75, -6, 15.5, 12)
+          && qFuzzyCompare(penWidth(fractionalArrow), qreal(0.75)),
+          "fractional arrow dimensions did not scale correctly");
 
     QImage image(100, 80, QImage::Format_ARGB32);
     image.fill(QColor(12, 34, 56, 78));
