@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScrollBar>
 #include <QWheelEvent>
 #include <QtMath>
 #include <cmath>
@@ -265,6 +266,35 @@ int main(int argc, char **argv)
                            qreal(11.25 + 2 * (1.5 * 0.7071067811865476 + 1.0))),
           "fractional rectangle geometry was not preserved");
 
+    const QPen customPen(Qt::blue, 3.5, Qt::DashLine, Qt::SquareCap);
+    ImageRotatedRectLabel styledRect(fractionalRect, 0, Qt::red, 1.5);
+    styledRect.setPen(customPen);
+    check(styledRect.getPen() == customPen,
+          "rectangle pen settings were not retained");
+    styledRect.onViewScaleChanged(2);
+    {
+        QPainter painter(&contourRender);
+        styledRect.paint(&painter, nullptr, nullptr);
+        check(painter.pen().color() == Qt::blue
+              && painter.pen().style() == Qt::DashLine
+              && painter.pen().capStyle() == Qt::SquareCap
+              && qFuzzyCompare(painter.pen().widthF(), qreal(1.75)),
+              "rectangle pen settings or scaled width were not applied");
+    }
+    const auto setAndCheckPen = [&customPen](ImageLabel &label) {
+        label.setPen(customPen);
+        return label.getPen() == customPen;
+    };
+    ImagePointLabel penPoint(QPointF(5, 5));
+    ImageEllipseLabel penEllipse(QPointF(5, 5), 3);
+    ImageArrowLabel penArrow(QPointF(0, 0), QPointF(10, 10));
+    ImageContourLabel penContour(contourPoints);
+    check(setAndCheckPen(penPoint) && setAndCheckPen(penEllipse)
+          && setAndCheckPen(penArrow) && setAndCheckPen(penContour),
+          "a pen-capable label did not retain its pen");
+    softMask.setPen(customPen);
+    check(softMask.getPen() == QPen(), "mask label unexpectedly accepted a pen");
+
     ImageEllipseLabel ellipseFromBounds(fractionalRect, 0, Qt::red, 1.5);
     ImageEllipseLabel ellipseFromRadii(fractionalCenter, 10.75, 5.625, 0, Qt::red, 1.5);
     ImageEllipseLabel circle(fractionalCenter, 5.625, Qt::red, 1.5);
@@ -295,6 +325,87 @@ int main(int argc, char **argv)
           && qFuzzyCompare(penWidth(ellipseFromRadii), qreal(1.5))
           && qFuzzyCompare(penWidth(fractionalArrow), qreal(1.5)),
           "fractional line width was not preserved");
+
+    ImageLineLabel segment(QPointF(10, 20), QPointF(30, 20), Qt::red, 2);
+    check(segment.imagePos() == QPointF(20, 20)
+          && segment.boundingRect().contains(QPointF(-10, 0))
+          && segment.boundingRect().contains(QPointF(10, 0)),
+          "line segment geometry is incorrect");
+    segment.onViewScaleChanged(2);
+    segment.setPen(customPen);
+    check(segment.getPen() == customPen && qFuzzyCompare(penWidth(segment), qreal(1.75)),
+          "line pen or scaled width is incorrect");
+
+    ImageLabelView lineWidget;
+    lineWidget.resize(650, 400);
+    lineWidget.show();
+    app.processEvents();
+    auto *infiniteLine = new ImageLineLabel(QPointF(20, 30), QPointF(30, 30),
+                                            Qt::red, 2, true);
+    auto *angledLine = new ImageLineLabel(QPointF(25, 30), 90, Qt::blue, 2);
+    lineWidget.addLabel(infiniteLine);
+    lineWidget.addLabel(angledLine);
+    QImage lineImage(100, 80, QImage::Format_RGB32);
+    lineImage.fill(Qt::white);
+    lineWidget.setImage(lineImage);
+    auto *lineView = lineWidget.findChild<QGraphicsView *>("graphicsView");
+    check(lineView, "line view is missing");
+    const auto checkViewportLine = [&]() {
+        app.processEvents();
+        const int y = lineView->mapFromScene(QPointF(0, 30)).y();
+        check(y >= 0 && y < lineView->viewport()->height(), "line left the test viewport");
+        const int right = lineView->viewport()->width() - 3;
+        const QPointF leftScene = lineView->mapToScene(QPoint(2, y));
+        const QPointF rightScene = lineView->mapToScene(QPoint(right, y));
+        check(infiniteLine->boundingRect().translated(infiniteLine->pos()).contains(leftScene)
+              && infiniteLine->boundingRect().translated(infiniteLine->pos()).contains(rightScene),
+              "infinite line bounds do not cover the viewport");
+        QImage render(lineView->viewport()->size(), QImage::Format_ARGB32_Premultiplied);
+        render.fill(Qt::transparent);
+        lineView->viewport()->render(&render);
+        check(render.pixelColor(2, y).red() > 200 && render.pixelColor(2, y).green() < 80
+              && render.pixelColor(right, y).red() > 200 && render.pixelColor(right, y).green() < 80,
+              "infinite line was not rendered at both viewport edges");
+    };
+    check(lineView->mapToScene(QPoint(2, lineView->mapFromScene(QPointF(0, 30)).y())).x() < 0,
+          "test viewport does not extend beyond the image");
+    checkViewportLine();
+    {
+        const int x = lineView->mapFromScene(QPointF(25, 30)).x();
+        QImage render(lineView->viewport()->size(), QImage::Format_ARGB32_Premultiplied);
+        render.fill(Qt::transparent);
+        lineView->viewport()->render(&render);
+        const int bottom = render.height() - 3;
+        check(render.pixelColor(x, 2).blue() > 200 && render.pixelColor(x, 2).red() < 80
+              && render.pixelColor(x, bottom).blue() > 200 && render.pixelColor(x, bottom).red() < 80,
+              "vertical line was not rendered at both viewport edges");
+    }
+    lineWidget.resize(800, 400);
+    checkViewportLine();
+    const QPoint zoomPos = lineView->mapFromScene(QPointF(25, 30));
+    QWheelEvent lineWheel(QPointF(zoomPos), QPointF(lineView->viewport()->mapToGlobal(zoomPos)),
+                          QPoint(), QPoint(0, 120), Qt::NoButton,
+                          Qt::NoModifier, Qt::NoScrollPhase, false);
+    for (int i = 0; i < 10; ++i)
+        QApplication::sendEvent(lineView->viewport(), &lineWheel);
+    lineView->centerOn(QPointF(25, 30));
+    checkViewportLine();
+    QScrollBar *horizontal = lineView->horizontalScrollBar();
+    check(horizontal->maximum() > horizontal->minimum(), "test view cannot pan horizontally");
+    const int oldScroll = horizontal->value();
+    horizontal->setValue(oldScroll == horizontal->minimum() ? horizontal->maximum()
+                                                            : horizontal->minimum());
+    check(horizontal->value() != oldScroll, "test view did not pan");
+    checkViewportLine();
+    lineWidget.setImage(QImage());
+    checkViewportLine();
+    ImageLineLabel outsideLine(QPointF(0, -10), QPointF(10, -10), Qt::red, 2, true);
+    outsideLine.onViewRectChanged(QRectF(0, 0, 100, 80));
+    check(outsideLine.boundingRect().isEmpty(), "outside infinite line was not clipped");
+    ImageLineLabel invalidLine(QPointF(5, 5), QPointF(5, 5), Qt::red, 2, true);
+    invalidLine.onViewRectChanged(QRectF(0, 0, 100, 80));
+    check(invalidLine.boundingRect().isEmpty(), "infinite line with identical points was drawn");
+
     fractionalArrow.onViewScaleChanged(2);
     check(fractionalArrow.boundingRect() == QRectF(-7.75, -6, 15.5, 12)
           && qFuzzyCompare(penWidth(fractionalArrow), qreal(0.75)),

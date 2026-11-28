@@ -3,6 +3,7 @@
 #include <QDebug>
 #include <QFontMetricsF>
 #include <QPainter>
+#include <QtMath>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -26,14 +27,32 @@ qreal scaledThickness(qreal base, qreal scale)
 {
     return base / (scale > 0.0 ? scale : 1.0);
 }
+
+QPen makePen(const QColor &color, qreal width)
+{
+    QPen pen(color);
+    pen.setWidthF(width);
+    return pen;
+}
+
 }
 
 ImagePointLabel::ImagePointLabel(QPointF point, qreal size, QColor color, qreal thickness, qreal angle,
                                  QGraphicsItem *parent)
-    : ImageLabel(parent), _point(point), _size(size), _color(color),
+    : ImageLabel(parent), _point(point), _size(size), _pen(makePen(color, thickness)),
       _thickness(thickness), _angle(angle)
 {
     setFlag(ItemIgnoresTransformations);
+}
+
+void ImagePointLabel::setPen(const QPen &pen)
+{
+    const qreal thickness = pen.widthF();
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _thickness = thickness;
+    update();
 }
 
 QRectF ImagePointLabel::boundingRect() const
@@ -45,7 +64,7 @@ QRectF ImagePointLabel::boundingRect() const
 
 void ImagePointLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
-    QPen pen(_color);
+    QPen pen = _pen;
     pen.setWidthF(_thickness);
     painter->setPen(pen);
     painter->rotate(_angle);
@@ -75,17 +94,31 @@ void ImageTextLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
 
 ImageRotatedRectLabel::ImageRotatedRectLabel(QRectF rect, qreal angle, QColor color, qreal thickness,
                                              QGraphicsItem *parent)
-    : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
-      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
+    : ImageLabel(parent), _rect(rect), _angle(angle),
+      _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness)
 {
 }
 
 ImageRotatedRectLabel::ImageRotatedRectLabel(qreal w, qreal h, QPointF center, qreal angle, QColor color,
                                              qreal thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - w / 2.0, center.y() - h / 2.0, w, h),
-      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), thickness)),
-      _thickness(_baseThickness)
+      _angle(angle), _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness)
 {
+}
+
+void ImageRotatedRectLabel::setPen(const QPen &pen)
+{
+    const qreal baseThickness = std::max(qreal(0.1), pen.widthF());
+    const qreal thickness = _thickness * baseThickness / _baseThickness;
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _pen.setWidthF(baseThickness);
+    _baseThickness = baseThickness;
+    _thickness = thickness;
+    update();
 }
 
 QRectF ImageRotatedRectLabel::boundingRect() const
@@ -95,7 +128,7 @@ QRectF ImageRotatedRectLabel::boundingRect() const
 
 void ImageRotatedRectLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
-    QPen pen(_color);
+    QPen pen = _pen;
     pen.setWidthF(_thickness);
     painter->setPen(pen);
     painter->rotate(_angle);
@@ -126,17 +159,31 @@ ImageEllipseLabel::ImageEllipseLabel(QPointF center, qreal radius, Qt::GlobalCol
 
 ImageEllipseLabel::ImageEllipseLabel(QRectF rect, qreal angle, QColor color, qreal thickness,
                                      QGraphicsItem *parent)
-    : ImageLabel(parent), _rect(rect), _angle(angle), _color(color),
-      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
+    : ImageLabel(parent), _rect(rect), _angle(angle),
+      _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness)
 {
 }
 
 ImageEllipseLabel::ImageEllipseLabel(QPointF center, qreal rx, qreal ry, qreal angle, QColor color,
                                      qreal thickness, QGraphicsItem *parent)
     : ImageLabel(parent), _rect(center.x() - rx, center.y() - ry, 2.0 * rx, 2.0 * ry),
-      _angle(angle), _color(color), _baseThickness(std::max(qreal(0.1), thickness)),
-      _thickness(_baseThickness)
+      _angle(angle), _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness)
 {
+}
+
+void ImageEllipseLabel::setPen(const QPen &pen)
+{
+    const qreal baseThickness = std::max(qreal(0.1), pen.widthF());
+    const qreal thickness = _thickness * baseThickness / _baseThickness;
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _pen.setWidthF(baseThickness);
+    _baseThickness = baseThickness;
+    _thickness = thickness;
+    update();
 }
 
 QRectF ImageEllipseLabel::boundingRect() const
@@ -146,7 +193,7 @@ QRectF ImageEllipseLabel::boundingRect() const
 
 void ImageEllipseLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
-    QPen pen(_color);
+    QPen pen = _pen;
     pen.setWidthF(_thickness);
     painter->setPen(pen);
     painter->rotate(_angle);
@@ -165,10 +212,24 @@ void ImageEllipseLabel::onViewScaleChanged(qreal viewScale)
 
 ImageArrowLabel::ImageArrowLabel(QPointF start, QPointF end, QColor color, qreal thickness,
                                  qreal arrowSize, QGraphicsItem *parent)
-    : ImageLabel(parent), _start(start), _end(end), _color(color),
-      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness),
+    : ImageLabel(parent), _start(start), _end(end),
+      _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness),
       _baseArrowSize(std::max(qreal(0.1), arrowSize)), _arrowSize(_baseArrowSize)
 {
+}
+
+void ImageArrowLabel::setPen(const QPen &pen)
+{
+    const qreal baseThickness = std::max(qreal(0.1), pen.widthF());
+    const qreal thickness = _thickness * baseThickness / _baseThickness;
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _pen.setWidthF(baseThickness);
+    _baseThickness = baseThickness;
+    _thickness = thickness;
+    update();
 }
 
 QPointF ImageArrowLabel::imagePos() const
@@ -188,7 +249,7 @@ void ImageArrowLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *,
 {
     const QPointF start = _start - imagePos();
     const QPointF end = _end - imagePos();
-    QPen pen(_color);
+    QPen pen = _pen;
     pen.setWidthF(_thickness);
     painter->setPen(pen);
     painter->drawLine(start, end);
@@ -198,7 +259,7 @@ void ImageArrowLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *,
     head << end
          << end - QPointF(std::cos(angle + offset) * _arrowSize, std::sin(angle + offset) * _arrowSize)
          << end - QPointF(std::cos(angle - offset) * _arrowSize, std::sin(angle - offset) * _arrowSize);
-    painter->setBrush(_color);
+    painter->setBrush(_pen.brush());
     painter->drawPolygon(head);
 }
 
@@ -275,9 +336,11 @@ QPointF ImageMaskLabel::imagePos() const
 
 ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color, qreal thickness,
                                      QGraphicsItem *parent)
-    : ImageLabel(parent), _color(color),
-      _baseThickness(std::max(qreal(0.1), thickness)), _thickness(_baseThickness)
+    : ImageLabel(parent), _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness)
 {
+    _pen.setJoinStyle(Qt::RoundJoin);
+    _pen.setCapStyle(Qt::RoundCap);
     _points.reserve(points.size());
     for (const QPointF &point : points)
         _points << point;
@@ -289,6 +352,19 @@ ImageContourLabel::ImageContourLabel(const QList<QPointF> &points, QColor color,
     }
 
     this->setCacheMode(QGraphicsItem::DeviceCoordinateCache);
+}
+
+void ImageContourLabel::setPen(const QPen &pen)
+{
+    const qreal baseThickness = std::max(qreal(0.1), pen.widthF());
+    const qreal thickness = _thickness * baseThickness / _baseThickness;
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _pen.setWidthF(baseThickness);
+    _baseThickness = baseThickness;
+    _thickness = thickness;
+    update();
 }
 
 QRectF ImageContourLabel::boundingRect() const
@@ -303,10 +379,8 @@ void ImageContourLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem 
 {
     if (_points.isEmpty())
         return;
-    QPen pen(_color);
+    QPen pen = _pen;
     pen.setWidthF(_thickness);
-    pen.setJoinStyle(Qt::RoundJoin);
-    pen.setCapStyle(Qt::RoundCap);
     painter->setPen(pen);
     painter->setBrush(Qt::NoBrush);
     if (_points.size() == 1)
@@ -484,4 +558,116 @@ bool ImageContourFastLabel::ensureCapacity(int radius)
     _overlay = std::move(overlay);
     _capacityRadius = offset;
     return true;
+}
+
+ImageLineLabel::ImageLineLabel(QPointF p1, QPointF p2, QColor color, qreal thickness,
+                               bool inf, QGraphicsItem *parent)
+    : ImageLabel(parent), _center(p1 / 2.0 + p2 / 2.0),
+      _start(p1 - _center), _end(p2 - _center),
+      _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness),
+      _infinite(inf), _visible(!inf)
+{
+    const QPointF delta = p2 - p1;
+    const qreal length = std::hypot(delta.x(), delta.y());
+    if (!std::isfinite(p1.x()) || !std::isfinite(p1.y())
+        || !std::isfinite(p2.x()) || !std::isfinite(p2.y())
+        || !std::isfinite(length) || (inf && length == 0)) {
+        qWarning() << "ImageLineLabel: invalid endpoints";
+        _center = QPointF();
+        _visible = false;
+        return;
+    }
+    if (inf)
+        _direction = delta / length;
+}
+
+ImageLineLabel::ImageLineLabel(QPointF p, qreal angle, QColor color, qreal thickness,
+                               QGraphicsItem *parent)
+    : ImageLabel(parent), _center(p),
+      _pen(makePen(color, std::max(qreal(0.1), thickness))),
+      _baseThickness(_pen.widthF()), _thickness(_baseThickness),
+      _infinite(true), _visible(false)
+{
+    if (!std::isfinite(p.x()) || !std::isfinite(p.y()) || !std::isfinite(angle)) {
+        qWarning() << "ImageLineLabel: invalid point or angle";
+        _center = QPointF();
+        return;
+    }
+    const qreal radians = qDegreesToRadians(std::fmod(angle, qreal(360)));
+    _direction = QPointF(std::cos(radians), std::sin(radians));
+}
+
+QRectF ImageLineLabel::boundingRect() const
+{
+    if (!_visible)
+        return QRectF();
+    const qreal margin = _thickness * 0.7071067811865476 + 1.0;
+    return QRectF(_start, _end).normalized().adjusted(-margin, -margin, margin, margin);
+}
+
+void ImageLineLabel::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    if (!_visible)
+        return;
+    QPen pen = _pen;
+    pen.setWidthF(_thickness);
+    painter->setPen(pen);
+    painter->drawLine(_start, _end);
+}
+
+void ImageLineLabel::setPen(const QPen &pen)
+{
+    const qreal baseThickness = std::max(qreal(0.1), pen.widthF());
+    const qreal thickness = _thickness * baseThickness / _baseThickness;
+    if (!qFuzzyCompare(thickness, _thickness))
+        prepareGeometryChange();
+    _pen = pen;
+    _pen.setWidthF(baseThickness);
+    _baseThickness = baseThickness;
+    _thickness = thickness;
+    update();
+}
+
+void ImageLineLabel::onViewScaleChanged(qreal viewScale)
+{
+    const qreal thickness = scaledThickness(_baseThickness, viewScale);
+    if (!qFuzzyCompare(thickness, _thickness)) {
+        prepareGeometryChange();
+        _thickness = thickness;
+        update();
+    }
+}
+
+void ImageLineLabel::onViewRectChanged(const QRectF &viewRect)
+{
+    if (_infinite)
+        updateLine(viewRect);
+}
+
+void ImageLineLabel::updateLine(const QRectF &viewRect)
+{
+    qreal low = -std::numeric_limits<qreal>::infinity();
+    qreal high = std::numeric_limits<qreal>::infinity();
+    const auto clip = [&low, &high](qreal origin, qreal direction, qreal min, qreal max) {
+        if (direction == 0)
+            return origin >= min && origin <= max;
+        qreal a = (min - origin) / direction;
+        qreal b = (max - origin) / direction;
+        if (a > b)
+            std::swap(a, b);
+        low = std::max(low, a);
+        high = std::min(high, b);
+        return low <= high;
+    };
+    const bool visible = !viewRect.isEmpty() && !_direction.isNull()
+        && clip(_center.x(), _direction.x(), viewRect.left(), viewRect.right())
+        && clip(_center.y(), _direction.y(), viewRect.top(), viewRect.bottom());
+    prepareGeometryChange();
+    _visible = visible;
+    if (visible) {
+        _start = _direction * low;
+        _end = _direction * high;
+    }
+    update();
 }

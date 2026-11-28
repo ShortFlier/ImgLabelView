@@ -31,7 +31,11 @@ protected:
 
 private:
     void updateInfo(const QPoint *mousePos = nullptr);
+    //缩放后修改标签显示
     void updateLabels();
+    QRectF viewRect() const;
+    //视口改变后修改标签显示
+    void updateViewRect();
 
     Ui::ImageLabelViewForm *ui;
     QGraphicsScene *_scene;
@@ -42,6 +46,8 @@ private:
     bool _grayscale = false;
     QPoint _lastMousePos;
     bool _hasMousePos = false;
+    QRectF _lastViewRect;
+    bool _hasViewRect = false;
     qreal _wheelZoomStep = 1.15;
     qreal _scaleFactor = 1.0;
     qreal _minScaleFactor = 0.1;

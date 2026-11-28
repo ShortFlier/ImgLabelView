@@ -7,7 +7,7 @@
 - 使用鼠标滚轮缩放图像，按住鼠标左键拖动以平移图像。
 - 底部状态栏显示图像大小、鼠标位置、像素值和当前缩放比例。
 - 灰度图显示单个灰度值；无透明通道的彩色图显示 RGB；带透明通道的图像显示 RGBA。16 位灰度图显示原始 16 位数值。灰度调色板的索引图像显示调色板对应的灰度值。
-- 支持点、文字、旋转矩形、圆、椭圆、箭头和闭合轮廓标签。
+- 支持点、文字、旋转矩形、圆、椭圆、箭头、线段、直线和闭合轮廓标签。
 
 ## 构建和运行
 
@@ -27,7 +27,7 @@ ctest --test-dir build --output-on-failure
 
 请将 `CMAKE_PREFIX_PATH` 替换为本机 Qt 安装路径，并确保 CMake、MinGW 和运行时所需的 Qt DLL 可以从 `PATH` 找到。也可在 Qt Creator 中打开顶层 `CMakeLists.txt`，选择相应的 Qt Kit 进行构建。
 
-示例程序从**工作目录**加载 `testEllipes.bmp`，并添加几个点标签。运行前请将图片放到工作目录，或修改 `main.cpp` 中的路径；图片加载失败时视图为空。
+示例程序从**工作目录**加载 `testEllipes.bmp`，并添加点、文字、旋转矩形、圆、椭圆和箭头标签。运行前请将图片放到工作目录，或修改 `main.cpp` 中的路径；图片加载失败时视图为空。
 
 ## 使用组件
 
@@ -51,6 +51,8 @@ view->addLabel(new ImageRotatedRectLabel(QRectF(50.5, 60.5, 100.5, 40.5), 30));
 view->addLabel(new ImageEllipseLabel(QPointF(150.5, 100.5), 30.5));
 view->addLabel(new ImageEllipseLabel(QPointF(200.5, 100.5), 40.5, 20.5, 30));
 view->addLabel(new ImageArrowLabel(QPointF(50.5, 50.5), QPointF(100.5, 80.5)));
+view->addLabel(new ImageLineLabel(QPointF(20, 20), QPointF(80, 60)));
+view->addLabel(new ImageLineLabel(QPointF(50, 50), 45.0));
 view->addLabel(new ImageContourLabel({QPointF(40, 40), QPointF(80, 40), QPointF(60, 70)}));
 view->addLabel(new ImageContourFastLabel({QPointF(100, 40), QPointF(140, 40), QPointF(120, 70)}));
 
@@ -65,9 +67,11 @@ view->addLabel(new ImageContourFastLabel({QPointF(100, 40), QPointF(140, 40), QP
 - `clearLabels()` 删除所有已添加标签。
 - `setScaleFactorRange(qreal minScale, qreal maxScale)` 设置滚轮缩放限制，默认范围为 `0.1` 到 `20.0`。范围必须为有限值，且满足 `0 < minScale <= maxScale`；无效输入会被拒绝并输出警告。设置范围不会立即改变当前缩放，限制在下一次滚轮缩放时生效。
 
-标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆、箭头和轮廓的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。轮廓点按顺序连接并自动闭合，不填充内部。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
+标签坐标相对于图像左上角，以图像像素为单位。点和文字保持屏幕尺寸；矩形、圆、椭圆、箭头、线和轮廓的几何尺寸随图像缩放，线宽和箭头头部保持屏幕尺寸。`ImageLineLabel` 支持线段或直线；直线延伸到图形视口边缘，包括图像范围之外，并随视口变化更新。通过两点定义直线时两点不能重合；点和角度构造直线时角度以度为单位。轮廓点按顺序连接并自动闭合，不填充内部。矩形和椭圆的旋转角度以度为单位，使用 Qt 绘图坐标系，在默认屏幕坐标系中正角度视觉上为顺时针。
 
 点、矩形、圆、椭圆、箭头和轮廓的坐标及相应的尺寸、线宽和角度支持浮点值。高速轮廓的目标线宽也可为浮点值，但实际图像像素线宽仍会取整。
+
+`ImagePointLabel`、`ImageRotatedRectLabel`、`ImageEllipseLabel`、`ImageArrowLabel`、`ImageLineLabel` 和 `ImageContourLabel` 支持通过 `getPen()` / `setPen()` 读取和设置画笔；返回的线宽是视图缩放前的基础线宽。文字、掩膜和高速轮廓标签不使用此接口。
 
 为减少缩放时的轮廓更新开销，轮廓线宽仅在图像坐标下的目标线宽相对上次更新变化达到约 20% 时调整，因此屏幕线宽会在缩放过程中略有变化。
 

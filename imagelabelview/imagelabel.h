@@ -4,11 +4,13 @@
 #include <QFont>
 #include <QGraphicsItem>
 #include <QImage>
+#include <QPen>
 #include <QPolygonF>
 
 
 // 点和文字的大小以屏幕像素为单位。
 // 几何标签的尺寸以图像像素为单位，线宽以屏幕像素为单位。
+// 角度默认参考图片坐标系，顺时针为正
 class ImageLabel : public QGraphicsItem
 {
 public:
@@ -19,6 +21,12 @@ public:
 
     //返回在图片上的位置
     virtual QPointF imagePos() const = 0;
+
+    virtual void onViewRectChanged(const QRectF &viewRect) { Q_UNUSED(viewRect); }
+
+    // Labels without a pen keep the default no-op behavior.
+    virtual QPen getPen() { return QPen(); }
+    virtual void setPen(const QPen &pen) { Q_UNUSED(pen); }
 };
 
 //交叉点，形状为"+"
@@ -37,11 +45,13 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _point; }
     void onViewScaleChanged(qreal viewScale) override { Q_UNUSED(viewScale); }
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
 
 private:
     QPointF _point;
     qreal _size;
-    QColor _color;
+    QPen _pen;
     qreal _thickness;
     qreal _angle;
 };
@@ -88,11 +98,13 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _rect.center(); }
     void onViewScaleChanged(qreal viewScale) override;
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
 
 private:
     QRectF _rect;
     qreal _angle;
-    QColor _color;
+    QPen _pen;
     qreal _baseThickness;
     qreal _thickness;
 };
@@ -125,11 +137,13 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _rect.center(); }
     void onViewScaleChanged(qreal viewScale) override;
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
 
 private:
     QRectF _rect;
     qreal _angle;
-    QColor _color;
+    QPen _pen;
     qreal _baseThickness;
     qreal _thickness;
 };
@@ -148,11 +162,13 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override;
     void onViewScaleChanged(qreal viewScale) override;
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
 
 private:
     QPointF _start;
     QPointF _end;
-    QColor _color;
+    QPen _pen;
     qreal _baseThickness;
     qreal _thickness;
     qreal _baseArrowSize;
@@ -201,12 +217,14 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPointF imagePos() const override { return _center; }
     void onViewScaleChanged(qreal viewScale) override;
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
 
 private:
     QPolygonF _points;
     QPointF _center;
     QRectF _pointBounds;
-    QColor _color;
+    QPen _pen;
     qreal _baseThickness;
     qreal _thickness;
 };
@@ -240,4 +258,44 @@ private:
     int _diaphaneity;
     int _maskPixel = 0;
     int _capacityRadius = -1;
+};
+
+
+
+//线及线段
+class ImageLineLabel : public ImageLabel
+{
+public:
+    /*
+    @p1、p2 线段上起点和端点，图片坐标系
+    @inf 为 true 时绘制直线在视口内的部分；两点不能重合
+    */
+    ImageLineLabel(QPointF p1, QPointF p2, QColor color = Qt::red, qreal thickness = 2,
+                   bool inf = false, QGraphicsItem *parent = nullptr);
+    /*
+    @p 直线上的一点，图片坐标系
+    @angle 直线与x方向的夹角，单位为度，参考图片坐标系，顺时针为正
+    */
+    ImageLineLabel(QPointF p, qreal angle, QColor color = Qt::red, qreal thickness = 2,
+                   QGraphicsItem *parent = nullptr);
+
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    QPointF imagePos() const override { return _center; }
+    void onViewScaleChanged(qreal viewScale) override;
+    void onViewRectChanged(const QRectF &viewRect) override;
+    QPen getPen() override { return _pen; }
+    void setPen(const QPen &pen) override;
+
+private:
+    void updateLine(const QRectF &viewRect);
+    QPointF _center;
+    QPointF _direction;
+    QPointF _start;
+    QPointF _end;
+    QPen _pen;
+    qreal _baseThickness;
+    qreal _thickness;
+    bool _infinite;
+    bool _visible;
 };

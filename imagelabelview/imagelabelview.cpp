@@ -28,6 +28,7 @@ ImageLabelView::ImageLabelView(QWidget *parent)
     ui->graphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     ui->graphicsView->viewport()->installEventFilter(this);
     const auto updatePosition = [this]() {
+        updateViewRect();
         updateInfo(_hasMousePos ? &_lastMousePos : nullptr);
     };
     connect(ui->graphicsView->horizontalScrollBar(), &QScrollBar::valueChanged, this, updatePosition);
@@ -79,6 +80,7 @@ void ImageLabelView::setImage(const QImage &image)
     } else if (!_hasInitialImage) {
         _scene->setSceneRect(0, 0, 1, 1);
     }
+    updateViewRect();
     updateLabels();
     updateInfo(_hasMousePos ? &_lastMousePos : nullptr);
 }
@@ -96,6 +98,7 @@ void ImageLabelView::addLabel(ImageLabel *label)
     _scene->addItem(label);
     _labels.append(label);
     label->setPos(label->imagePos());
+    label->onViewRectChanged(viewRect());
     label->onViewScaleChanged(_scaleFactor);
 }
 
@@ -120,6 +123,23 @@ void ImageLabelView::updateLabels()
 {
     for (ImageLabel *label : _labels)
         label->onViewScaleChanged(_scaleFactor);
+}
+
+QRectF ImageLabelView::viewRect() const
+{
+    const QRect rect = ui->graphicsView->viewport()->rect().adjusted(-1, -1, 1, 1);
+    return ui->graphicsView->mapToScene(rect).boundingRect();
+}
+
+void ImageLabelView::updateViewRect()
+{
+    const QRectF rect = viewRect();
+    if (_hasViewRect && _lastViewRect == rect)
+        return;
+    _lastViewRect = rect;
+    _hasViewRect = true;
+    for (ImageLabel *label : _labels)
+        label->onViewRectChanged(rect);
 }
 
 void ImageLabelView::updateInfo(const QPoint *mousePos)
@@ -158,7 +178,10 @@ void ImageLabelView::updateInfo(const QPoint *mousePos)
 bool ImageLabelView::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == ui->graphicsView->viewport()) {
-        if (event->type() == QEvent::MouseMove) {
+        if (event->type() == QEvent::Paint) {
+            // Resizing or alignment can move the viewport without a scrollbar change.
+            updateViewRect();
+        } else if (event->type() == QEvent::MouseMove) {
             _lastMousePos = static_cast<QMouseEvent *>(event)->pos();
             _hasMousePos = true;
             updateInfo(&_lastMousePos);
@@ -181,6 +204,7 @@ bool ImageLabelView::eventFilter(QObject *watched, QEvent *event)
             ui->graphicsView->scale(newScale / _scaleFactor, newScale / _scaleFactor);
             _scaleFactor = newScale;
             updateLabels();
+            updateViewRect();
             updateInfo(&_lastMousePos);
             wheel->accept();
             return true;
